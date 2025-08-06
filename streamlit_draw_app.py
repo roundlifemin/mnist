@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image, ImageOps
 import tensorflow as tf
 import os
+from scipy.ndimage import center_of_mass, shift
 
 # ---------------------------
 # 모델 로드
