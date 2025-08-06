@@ -18,7 +18,8 @@ def get_latest_model():
     return os.path.join(MODEL_DIR, models[0])
 
 latest_model_path = get_latest_model()
-model = tf.keras.models.load_model(latest_model_path) if latest_model_path else None
+# 단, TensorFlow 2.13에서는 safe_mode=False를 명시하지 않으면 복원 과정에서 일부 레이어가 누락되어 예외가 발생할 수 있다.
+model = tf.keras.models.load_model(latest_model_path , safe_mode=False) if latest_model_path else None
 
 # ---------------------------
 # 앱 UI
