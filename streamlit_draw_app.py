@@ -1,85 +1,83 @@
-import streamlit as st
-from streamlit_drawable_canvas import st_canvas
+# train_mnist_mlp.py
+
 import numpy as np
-from PIL import Image, ImageOps
-import tensorflow as tf
+import matplotlib.pyplot as plt
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Dense, Dropout
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.optimizers import Adam
+from datetime import datetime
 import os
-from scipy.ndimage import center_of_mass, shift
+import random
 
-# ---------------------------
-# 모델 로드
-# ---------------------------
-MODEL_DIR = "saved_models"
-def get_latest_model():
-    models = [f for f in os.listdir(MODEL_DIR) if f.endswith(".keras")]
-    if not models:
-        return None
-    models.sort(reverse=True)
-    return os.path.join(MODEL_DIR, models[0])
+# -----------------------------
+# ① 데이터 로딩 및 전처리
+# -----------------------------
+(X_train, y_train), (X_val, y_val) = mnist.load_data()
 
-latest_model_path = get_latest_model()
-# 단, TensorFlow 2.13에서는 safe_mode=False를 명시하지 않으면 복원 과정에서 일부 레이어가 누락되어 예외가 발생할 수 있다.
-model = tf.keras.models.load_model(latest_model_path , safe_mode=False) if latest_model_path else None
+X_train = X_train.astype('float32') / 255.0
+X_val = X_val.astype('float32') / 255.0
 
-# ---------------------------
-# 앱 UI
-# ---------------------------
-st.title("숫자 그리기 - MNIST 예측기")
-st.markdown("아래에 숫자를 **직접 그려보세요** (0~9)")
+X_train = X_train.reshape(-1, 28 * 28)
+X_val = X_val.reshape(-1, 28 * 28)
 
-# ---------------------------
-# 캔버스 구성
-# ---------------------------
-canvas_result = st_canvas(
-    fill_color="#000000",       # 내부 채움색
-    stroke_width=12,            # 선 두께
-    stroke_color="#FFFFFF",     # 선 색 (흰색)
-    background_color="#000000", # 배경 (검정색)
-    width=280,
-    height=280,
-    drawing_mode="freedraw",
-    key="canvas",
-)
+y_train_cat = to_categorical(y_train, 10)
+y_val_cat = to_categorical(y_val, 10)
 
-# ---------------------------
-# 예측 버튼
-# ---------------------------
-# 예측 버튼
-if st.button("예측 실행") and canvas_result.image_data is not None and model:
-    img = canvas_result.image_data
+# -----------------------------
+# ② 모델 정의 (MLP + Dropout)
+# -----------------------------
+inputs = Input(shape=(784,))
+x = Dense(256, activation='relu')(inputs)
+x = Dropout(0.5)(x)
+x = Dense(128, activation='relu')(x)
+x = Dropout(0.3)(x)
+outputs = Dense(10, activation='softmax')(x)
 
-    # 흑백 채널만 사용
-    img = Image.fromarray((img[:, :, 0]).astype('uint8'))
+model = Model(inputs, outputs)
+model.compile(optimizer=Adam(),
+              loss='categorical_crossentropy',
+              metrics=['accuracy'])
 
-    # 크기 조정 및 색 반전
-    img = img.resize((28, 28))
-    img = ImageOps.invert(img)
+model.summary()
 
-    # 중심 이동 (중요)
-    img_arr = np.array(img)
+# -----------------------------
+# ③ 모델 저장 디렉토리 및 파일명
+# -----------------------------
+now = datetime.now().strftime("%Y%m%d_%H%M%S")
+model_dir = "saved_models"
+os.makedirs(model_dir, exist_ok=True)
+model_path = os.path.join(model_dir, f"mnist_model_{now}.h5")
 
-    # 픽셀이 너무 연하면 threshold 처리 (흰색이 숫자로 간주되도록)
-    img_arr[img_arr < 100] = 0
-    img_arr[img_arr >= 100] = 255
+# -----------------------------
+# ④ 콜백 설정
+# -----------------------------
+early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True, verbose=1)
+checkpoint = ModelCheckpoint(filepath=model_path, monitor='val_accuracy', save_best_only=True, verbose=1)
 
-    # 중심 맞춤: 이미지 무게중심을 계산해 중앙으로 이동
-    from scipy.ndimage import center_of_mass, shift
-    cy, cx = center_of_mass(img_arr)
-    shift_y = int(img_arr.shape[0]/2 - cy)
-    shift_x = int(img_arr.shape[1]/2 - cx)
-    img_arr = shift(img_arr, shift=(shift_y, shift_x), mode='constant', cval=0)
+# -----------------------------
+# ⑤ 학습
+# -----------------------------
+history = model.fit(X_train, y_train_cat,
+                    epochs=30,
+                    batch_size=128,
+                    validation_data=(X_val, y_val_cat),
+                    callbacks=[early_stopping, checkpoint],
+                    verbose=1)
 
-    # 정규화 및 reshape
-    img_arr = img_arr.astype("float32") / 255.0
-    img_arr = img_arr.reshape(1, 784)  # MLP용
+# -----------------------------
+# ⑥ 정확도 시각화
+# -----------------------------
+plt.plot(history.history['accuracy'], label='Train')
+plt.plot(history.history['val_accuracy'], label='Validation')
+plt.title("Accuracy")
+plt.xlabel("Epochs")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
 
-    # 예측
-    pred = model.predict(img_arr)
-    pred_class = np.argmax(pred)
-
-    st.subheader(f"예측된 숫자: **{pred_class}**")
-    st.bar_chart(pred[0])
-
-
-elif not model:
-    st.warning("모델이 없습니다. 먼저 학습하여 저장하세요.")
+print(f"모델 저장 완료: {model_path}")
