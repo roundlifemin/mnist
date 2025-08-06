@@ -17,7 +17,8 @@ def get_latest_model():
     return os.path.join(MODEL_DIR, models[0])
 
 latest_model_path = get_latest_model()
-model = tf.keras.models.load_model(latest_model_path) if latest_model_path else None
+# model = tf.keras.models.load_model(latest_model_path) if latest_model_path else None
+model = tf.keras.models.load_model(latest_model_path, safe_mode=False) if latest_model_path else None
 
 # ---------------------------
 # 앱 UI
