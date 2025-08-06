@@ -42,20 +42,42 @@ canvas_result = st_canvas(
 # ---------------------------
 # 예측 버튼
 # ---------------------------
+# 예측 버튼
 if st.button("예측 실행") and canvas_result.image_data is not None and model:
     img = canvas_result.image_data
-    img = Image.fromarray((img[:, :, 0]).astype('uint8'))  # 채널 하나만
 
+    # 흑백 채널만 사용
+    img = Image.fromarray((img[:, :, 0]).astype('uint8'))
+
+    # 크기 조정 및 색 반전
     img = img.resize((28, 28))
     img = ImageOps.invert(img)
-    img = np.array(img).astype("float32") / 255.0
-    img = img.reshape(1, 784)  # 1D 입력으로 변경
 
-    pred = model.predict(img)
+    # 중심 이동 (중요)
+    img_arr = np.array(img)
+
+    # 픽셀이 너무 연하면 threshold 처리 (흰색이 숫자로 간주되도록)
+    img_arr[img_arr < 100] = 0
+    img_arr[img_arr >= 100] = 255
+
+    # 중심 맞춤: 이미지 무게중심을 계산해 중앙으로 이동
+    from scipy.ndimage import center_of_mass, shift
+    cy, cx = center_of_mass(img_arr)
+    shift_y = int(img_arr.shape[0]/2 - cy)
+    shift_x = int(img_arr.shape[1]/2 - cx)
+    img_arr = shift(img_arr, shift=(shift_y, shift_x), mode='constant', cval=0)
+
+    # 정규화 및 reshape
+    img_arr = img_arr.astype("float32") / 255.0
+    img_arr = img_arr.reshape(1, 784)  # MLP용
+
+    # 예측
+    pred = model.predict(img_arr)
     pred_class = np.argmax(pred)
 
     st.subheader(f"예측된 숫자: **{pred_class}**")
     st.bar_chart(pred[0])
+
 
 elif not model:
     st.warning("모델이 없습니다. 먼저 학습하여 저장하세요.")
