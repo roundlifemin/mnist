@@ -1,3 +1,4 @@
+%%writefile streamlit_draw_app.py
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 import numpy as np
@@ -17,8 +18,7 @@ def get_latest_model():
     return os.path.join(MODEL_DIR, models[0])
 
 latest_model_path = get_latest_model()
-# model = tf.keras.models.load_model(latest_model_path) if latest_model_path else None
-model = tf.keras.models.load_model(latest_model_path, safe_mode=False) if latest_model_path else None
+model = tf.keras.models.load_model(latest_model_path) if latest_model_path else None
 
 # ---------------------------
 # 앱 UI
@@ -44,21 +44,17 @@ canvas_result = st_canvas(
 # 예측 버튼
 # ---------------------------
 if st.button("예측 실행") and canvas_result.image_data is not None and model:
-    # 이미지 가져오기
     img = canvas_result.image_data
-    img = Image.fromarray((img[:, :, 0]).astype('uint8'))  # 흑백 채널만 사용
+    img = Image.fromarray((img[:, :, 0]).astype('uint8'))  # 채널 하나만
 
-    # 28x28로 축소, 반전 및 정규화
     img = img.resize((28, 28))
     img = ImageOps.invert(img)
     img = np.array(img).astype("float32") / 255.0
-    img = img.reshape(1, 28, 28, 1)
+    img = img.reshape(1, 784)  # ✅ 1D 입력으로 변경
 
-    # 예측
     pred = model.predict(img)
     pred_class = np.argmax(pred)
 
-    # 결과 출력
     st.subheader(f"예측된 숫자: **{pred_class}**")
     st.bar_chart(pred[0])
 
