@@ -1,119 +1,62 @@
-# ----------------------------------------
-# ① MNIST 데이터 로딩 및 전처리
-# ----------------------------------------
+%%writefile streamlit_draw_app.py
+import streamlit as st
+from streamlit_drawable_canvas import st_canvas
 import numpy as np
-import matplotlib.pyplot as plt
-from tensorflow.keras.datasets import mnist
-from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Input, Dense, Dropout, Flatten
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.optimizers import Adam
-from datetime import datetime
+from PIL import Image, ImageOps
+import tensorflow as tf
 import os
-import random
 
-# MNIST 데이터 불러오기
-(X_train, y_train), (X_val, y_val) = mnist.load_data()
+# ---------------------------
+# 모델 로드
+# ---------------------------
+MODEL_DIR = "saved_models"
+def get_latest_model():
+    models = [f for f in os.listdir(MODEL_DIR) if f.endswith(".keras")]
+    if not models:
+        return None
+    models.sort(reverse=True)
+    return os.path.join(MODEL_DIR, models[0])
 
-# 정규화 및 reshape
-X_train = X_train.astype('float32') / 255.0
-X_val = X_val.astype('float32') / 255.0
-X_train = X_train.reshape(-1, 28 * 28)
-X_val = X_val.reshape(-1, 28 * 28)
+latest_model_path = get_latest_model()
+model = tf.keras.models.load_model(latest_model_path) if latest_model_path else None
 
-# One-hot encoding
-y_train_cat = to_categorical(y_train, 10)
-y_val_cat = to_categorical(y_val, 10)
+# ---------------------------
+# 앱 UI
+# ---------------------------
+st.title("숫자 그리기 - MNIST 예측기")
+st.markdown("아래에 숫자를 **직접 그려보세요** (0~9)")
 
-# ----------------------------------------
-# ② Dropout 포함 MLP 모델 정의
-# ----------------------------------------
-print("X_train.shape:", X_train.shape)  # (60000, 784)
+# ---------------------------
+# 캔버스 구성
+# ---------------------------
+canvas_result = st_canvas(
+    fill_color="#000000",       # 내부 채움색
+    stroke_width=12,            # 선 두께
+    stroke_color="#FFFFFF",     # 선 색 (흰색)
+    background_color="#000000", # 배경 (검정색)
+    width=280,
+    height=280,
+    drawing_mode="freedraw",
+    key="canvas",
+)
 
-inputs = Input(shape=(784,), name="input")
-x = Dense(256, activation='relu', name="dense1")(inputs)
-x = Dropout(0.5, name="dropout1")(x)
-x = Dense(128, activation='relu', name="dense2")(x)
-x = Dropout(0.3, name="dropout2")(x)
-outputs = Dense(10, activation='softmax', name="output")(x)
+# ---------------------------
+# 예측 버튼
+# ---------------------------
+if st.button("예측 실행") and canvas_result.image_data is not None and model:
+    img = canvas_result.image_data
+    img = Image.fromarray((img[:, :, 0]).astype('uint8'))  # 채널 하나만
 
-model = Model(inputs=inputs, outputs=outputs)
-model.compile(optimizer=Adam(),
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
+    img = img.resize((28, 28))
+    img = ImageOps.invert(img)
+    img = np.array(img).astype("float32") / 255.0
+    img = img.reshape(1, 784)  # 1D 입력으로 변경
 
-model.summary()
+    pred = model.predict(img)
+    pred_class = np.argmax(pred)
 
-# ----------------------------------------
-# ③ EarlyStopping 및 ModelCheckpoint 설정
-# ----------------------------------------
-early_stopping = EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True, verbose=1)
+    st.subheader(f"예측된 숫자: **{pred_class}**")
+    st.bar_chart(pred[0])
 
-now = datetime.now()
-timestamp = now.strftime("%Y%m%d_%H%M%S")
-model_dir = "saved_models"
-os.makedirs(model_dir, exist_ok=True)
-model_path = os.path.join(model_dir, f"mnist_model_{timestamp}.keras")
-
-checkpoint = ModelCheckpoint(filepath=model_path,
-                             monitor='val_accuracy',
-                             save_best_only=True,
-                             verbose=1)
-
-# ----------------------------------------
-# ④ 모델 학습
-# ----------------------------------------
-history = model.fit(X_train, y_train_cat,
-                    epochs=30,
-                    batch_size=128,
-                    validation_data=(X_val, y_val_cat),
-                    callbacks=[early_stopping, checkpoint],
-                    verbose=1)
-
-# ----------------------------------------
-# ⑤ Accuracy 시각화
-# ----------------------------------------
-plt.figure(figsize=(8, 5))
-plt.plot(history.history['accuracy'], label='Train Accuracy')
-plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
-plt.title('MNIST Classification Accuracy')
-plt.xlabel('Epoch')
-plt.ylabel('Accuracy')
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-# ----------------------------------------
-# ⑥ 저장된 모델 불러와서 테스트
-# ----------------------------------------
-loaded_model = load_model(model_path)
-print(f"\n저장된 모델 로드 완료: {model_path}")
-
-loss, acc = loaded_model.evaluate(X_val, y_val_cat, verbose=0)
-print(f"불러온 모델의 검증 정확도: {acc * 100:.2f}%")
-
-# ----------------------------------------
-# ⑦ 특정 샘플 예측
-# ----------------------------------------
-sample_idx = random.randint(0, X_val.shape[0] - 1)
-sample_input = X_val[sample_idx].reshape(1, -1)
-true_label = y_val[sample_idx]
-
-# 예측 수행
-pred_probs = loaded_model.predict(sample_input)[0]
-pred_class = np.argmax(pred_probs)
-
-# 결과 출력
-print("특정 샘플 예측")
-print(f"샘플 인덱스: {sample_idx}")
-print(f"실제 레이블 (정답): {true_label}")
-print(f"예측 확률 분포: {np.round(pred_probs, 4)}")
-print(f"예측 결과: {pred_class}")
-
-# 시각화
-plt.imshow(X_val[sample_idx].reshape(28, 28), cmap='gray')
-plt.title(f"실제: {true_label}, 예측: {pred_class}")
-plt.axis("off")
-plt.show()
+elif not model:
+    st.warning("모델이 없습니다. 먼저 학습하여 저장하세요.")
