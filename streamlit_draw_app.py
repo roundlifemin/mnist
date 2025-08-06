@@ -26,7 +26,7 @@ model = tf.keras.models.load_model(latest_model_path) if latest_model_path else 
 # ---------------------------
 # UI 구성
 # ---------------------------
-st.title("🖌️ 숫자 그리기 - MNIST 예측기")
+st.title("숫자 그리기 - MNIST 예측기")
 st.markdown("검정 배경에 흰색으로 **숫자 (0~9)** 를 그려보세요.")
 
 canvas_result = st_canvas(
@@ -66,8 +66,8 @@ if st.button("예측 실행") and canvas_result.image_data is not None and model
     pred = model.predict(img_arr)
     pred_class = np.argmax(pred)
 
-    st.subheader(f"✅ 예측 결과: **{pred_class}**")
+    st.subheader(f"예측 결과: **{pred_class}**")
     st.bar_chart(pred[0])
 
 elif not model:
-    st.warning("❗ 모델을 먼저 학습하고 saved_models 폴더에 .h5로 저장하세요.")
+    st.warning("모델을 먼저 학습하고 saved_models 폴더에 .h5로 저장하세요.")
